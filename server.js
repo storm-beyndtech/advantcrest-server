@@ -18,10 +18,10 @@ import rateLimit from "express-rate-limit";
 const app = express();
 const server = http.createServer(app);
 
-// Verify transporter
-(async function verifyTP() {
-	await verifyTransporter();
-})();
+// Verify transporter - commented out to prevent server crashes
+// (async function verifyTP() {
+// 	await verifyTransporter();
+// })();
 
 // Checking for required ENV variables
 if (!process.env.JWT_PRIVATE_KEY) {
@@ -37,9 +37,9 @@ mongoose
 	.catch((e) => console.error("Error connecting to MongoDB:", e));
 
 const allowedOrigins = [
-	"https://AdvantCrest.com",
-	"https://www.AdvantCrest.com",
-	"https://AdvantCrest.vercel.app",
+	"https://advantcrest.com",
+	"https://www.advantcrest.com",
+	"https://advantcrest.vercel.app",
 	"http://localhost:5173",
 	"http://localhost:3000",
 ];

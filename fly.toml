@@ -1,10 +1,10 @@
-# fly.toml app configuration file generated for mirrorcaps-server on 2025-07-01T18:45:32+01:00
+# fly.toml app configuration file generated for advantcrest-server
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'mirrorcaps-server'
-primary_region = 'lax'
+app = 'advantcrest-server'
+primary_region = 'jnb'
 
 [build]
 
@@ -13,7 +13,7 @@ primary_region = 'lax'
   force_https = true
   auto_stop_machines = 'stop'
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
   processes = ['app']
 
 [[vm]]

@@ -4,7 +4,7 @@ dotenv.config();
 
 export const transporter = nodemailer.createTransport({
 	pool: true,
-	host: "mail.privateemail.com",
+	host: "smtp.hostinger.com",
 	port: 465,
 	auth: {
 		user: process.env.SMTP_USER,
