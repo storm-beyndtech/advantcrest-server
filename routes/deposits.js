@@ -30,7 +30,7 @@ router.get("/user/:email", async (req, res) => {
 
 // making a deposit
 router.post("/", async (req, res) => {
-	const { id, amount, convertedAmount, coinName } = req.body;
+	const { id, amount, convertedAmount, coinName, depositMethod, wireTransferData } = req.body;
 
 	const user = await User.findById(id);
 	if (!user) return res.status(400).send({ message: "Something went wrong" });
@@ -53,15 +53,24 @@ router.post("/", async (req, res) => {
 			name: user.fullName,
 		};
 
-		const walletData = {
+		const walletData = depositMethod === 'crypto' ? {
 			convertedAmount,
 			coinName,
 			network: "",
 			address: "",
-		};
+		} : {};
+
+		const wireData = depositMethod === 'wire' ? wireTransferData : {};
 
 		// Create a new deposit instance
-		const transaction = new Transaction({ type: "deposit", user: userData, amount, walletData });
+		const transaction = new Transaction({ 
+			type: "deposit", 
+			user: userData, 
+			amount, 
+			walletData,
+			wireTransferData: wireData,
+			depositMethod: depositMethod || 'crypto'
+		});
 		await transaction.save();
 
 		const date = transaction.date;
@@ -118,6 +127,25 @@ router.put("/:id", async (req, res) => {
 		if (emailData.error) return res.status(400).send({ message: emailData.error });
 
 		res.send({ message: "Deposit successfully updated" });
+	} catch (e) {
+		for (i in e.errors) res.status(500).send({ message: e.errors[i].message });
+	}
+});
+
+// deleting a deposit (cancel)
+router.delete("/:id", async (req, res) => {
+	const { id } = req.params;
+
+	try {
+		const deposit = await Transaction.findById(id);
+		if (!deposit) return res.status(404).send({ message: "Deposit not found" });
+		
+		if (deposit.status !== "pending") {
+			return res.status(400).send({ message: "Only pending deposits can be cancelled" });
+		}
+
+		await Transaction.findByIdAndDelete(id);
+		res.send({ message: "Deposit cancelled successfully" });
 	} catch (e) {
 		for (i in e.errors) res.status(500).send({ message: e.errors[i].message });
 	}

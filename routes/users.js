@@ -282,7 +282,7 @@ router.put("/reset-password", async (req, res) => {
 });
 
 router.put("/update-profile", upload.single("profileImage"), async (req, res) => {
-	const { email, ...rest } = req.body;
+	const { email, rank, ...rest } = req.body;
 
 	let user = await User.findOne({ email });
 	if (!user) return res.status(404).send({ message: "User not found" });
@@ -290,6 +290,19 @@ router.put("/update-profile", upload.single("profileImage"), async (req, res) =>
 	try {
 		if (req.file) {
 			rest.profileImage = req.file.path;
+		}
+
+		// Handle rank changes - if rank is being changed, mark as manual
+		if (rank !== undefined && rank !== user.rank) {
+			rest.rank = rank;
+			rest.manualRank = true;
+		}
+
+		// Auto-calculate rank based on deposit if it's just a deposit/interest update and not manually set
+		if ((rest.deposit !== undefined || rest.interest !== undefined) && rank === undefined && !user.manualRank) {
+			const newDeposit = rest.deposit !== undefined ? rest.deposit : user.deposit;
+			const autoRank = calculateAutoRank(newDeposit);
+			rest.rank = autoRank;
 		}
 
 		user.set(rest);
@@ -300,6 +313,36 @@ router.put("/update-profile", upload.single("profileImage"), async (req, res) =>
 		for (const i in e.errors) {
 			return res.status(500).send({ message: e.errors[i].message });
 		}
+	}
+});
+
+// Helper function to calculate rank based on deposit
+function calculateAutoRank(depositAmount) {
+	if (depositAmount >= 1000000) return 'ambassador';
+	if (depositAmount >= 500000) return 'diamond';
+	if (depositAmount >= 100000) return 'goldPro';
+	if (depositAmount >= 50000) return 'gold';
+	if (depositAmount >= 25000) return 'silverPro';
+	if (depositAmount >= 5000) return 'silver';
+	return 'welcome';
+}
+
+// Reset rank to auto-calculation
+router.put("/reset-rank-to-auto", async (req, res) => {
+	const { email } = req.body;
+
+	let user = await User.findOne({ email });
+	if (!user) return res.status(404).send({ message: "User not found" });
+
+	try {
+		const autoRank = calculateAutoRank(user.deposit);
+		user.rank = autoRank;
+		user.manualRank = false;
+		user = await user.save();
+
+		res.send({ user });
+	} catch (e) {
+		return res.status(500).send({ message: "Server error" });
 	}
 });
 

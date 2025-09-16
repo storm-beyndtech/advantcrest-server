@@ -140,6 +140,10 @@ export const userSchema = new mongoose.Schema({
 		type: String,
 		default: "welcome",
 	},
+	manualRank: {
+		type: Boolean,
+		default: false,
+	},
 	traderId: {
 		type: mongoose.Schema.Types.ObjectId,
 		ref: "Trader",

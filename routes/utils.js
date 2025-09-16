@@ -107,4 +107,50 @@ router.post("/contact-us", async (req, res) => {
 	}
 });
 
+// Toggle maintenance mode - Admin only
+router.put("/maintenance-mode", async (req, res) => {
+	const { enabled, message } = req.body;
+
+	try {
+		const util = await Util.findOne();
+		if (!util) return res.status(404).send({ message: "Utils not found" });
+
+		util.maintenanceMode = {
+			enabled: enabled !== undefined ? enabled : util.maintenanceMode.enabled,
+			message: message || util.maintenanceMode.message,
+			updatedAt: new Date()
+		};
+
+		await util.save();
+		res.status(200).json({
+			message: `Maintenance mode ${enabled ? 'enabled' : 'disabled'}`,
+			maintenanceMode: util.maintenanceMode
+		});
+	} catch (error) {
+		console.error("Error updating maintenance mode:", error);
+		res.status(500).json({ message: "Failed to update maintenance mode" });
+	}
+});
+
+// Get maintenance status - Public endpoint
+router.get("/maintenance-status", async (req, res) => {
+	try {
+		const util = await Util.findOne();
+		if (!util) {
+			return res.status(200).json({ 
+				enabled: false, 
+				message: "System is operational" 
+			});
+		}
+
+		res.status(200).json({
+			enabled: util.maintenanceMode?.enabled || false,
+			message: util.maintenanceMode?.message || "System is operational"
+		});
+	} catch (error) {
+		console.error("Error checking maintenance status:", error);
+		res.status(200).json({ enabled: false, message: "System is operational" });
+	}
+});
+
 export default router;

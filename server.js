@@ -19,9 +19,9 @@ const app = express();
 const server = http.createServer(app);
 
 // Verify transporter - commented out to prevent server crashes
-// (async function verifyTP() {
-// 	await verifyTransporter();
-// })();
+(async function verifyTP() {
+	await verifyTransporter();
+})();
 
 // Checking for required ENV variables
 if (!process.env.JWT_PRIVATE_KEY) {

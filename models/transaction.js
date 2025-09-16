@@ -53,6 +53,37 @@ const transactionSchema = new mongoose.Schema({
 			default: "",
 		},
 	},
+	wireTransferData: {
+		bankName: {
+			type: String,
+			default: "",
+		},
+		accountName: {
+			type: String,
+			default: "",
+		},
+		accountNumber: {
+			type: String,
+			default: "",
+		},
+		routingNumber: {
+			type: String,
+			default: "",
+		},
+		swiftCode: {
+			type: String,
+			default: "",
+		},
+		instructions: {
+			type: String,
+			default: "",
+		},
+	},
+	depositMethod: {
+		type: String,
+		enum: ['crypto', 'wire'],
+		default: 'crypto',
+	},
 	tradeData: {
 		package: {
 			type: String,
