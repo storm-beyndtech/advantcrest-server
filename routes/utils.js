@@ -1,6 +1,7 @@
 import express from "express";
 import { Util } from "../models/util.js";
 import { multiMails, sendContactUsMail } from "../utils/mailer.js";
+import { updateCoinPricesFromAPI, fetchCryptoPrices } from "../utils/cryptoPrices.js";
 
 const router = express.Router();
 
@@ -150,6 +151,48 @@ router.get("/maintenance-status", async (req, res) => {
 	} catch (error) {
 		console.error("Error checking maintenance status:", error);
 		res.status(200).json({ enabled: false, message: "System is operational" });
+	}
+});
+
+// Get coins with live prices
+router.get("/coins-with-prices", async (req, res) => {
+	try {
+		const util = await Util.findOne();
+		if (!util || !util.coins || util.coins.length === 0) {
+			return res.status(200).json({ coins: [] });
+		}
+
+		// Update coins with live API prices
+		const coinsWithPrices = await updateCoinPricesFromAPI(util.coins);
+		
+		res.status(200).json({ 
+			coins: coinsWithPrices,
+			lastUpdated: new Date().toISOString()
+		});
+	} catch (error) {
+		console.error("Error fetching coins with prices:", error);
+		res.status(500).json({ message: "Failed to fetch coin prices" });
+	}
+});
+
+// Get live crypto prices for specific coins
+router.post("/crypto-prices", async (req, res) => {
+	try {
+		const { coinSymbols } = req.body;
+		
+		if (!coinSymbols || !Array.isArray(coinSymbols)) {
+			return res.status(400).json({ message: "coinSymbols array is required" });
+		}
+
+		const prices = await fetchCryptoPrices(coinSymbols);
+		
+		res.status(200).json({ 
+			prices,
+			timestamp: new Date().toISOString()
+		});
+	} catch (error) {
+		console.error("Error fetching crypto prices:", error);
+		res.status(500).json({ message: "Failed to fetch crypto prices" });
 	}
 });
 

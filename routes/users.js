@@ -346,6 +346,60 @@ router.put("/reset-rank-to-auto", async (req, res) => {
 	}
 });
 
+// Get user rankings (custom or default)
+router.get("/rankings/:email", async (req, res) => {
+	const { email } = req.params;
+
+	try {
+		const user = await User.findOne({ email });
+		if (!user) return res.status(404).send({ message: "User not found" });
+
+		// If user has custom rankings, return them
+		if (user.customRankings && user.customRankings.length > 0) {
+			return res.send({ rankings: user.customRankings, isCustom: true });
+		}
+
+		// Otherwise, get default rankings from utils
+		const { Util } = await import("../models/util.js");
+		const utils = await Util.findOne();
+		const defaultRankings = utils?.defaultRankings || getHardcodedRankings();
+
+		res.send({ rankings: defaultRankings, isCustom: false });
+	} catch (e) {
+		return res.status(500).send({ message: "Server error" });
+	}
+});
+
+// Update user custom rankings
+router.put("/update-rankings", async (req, res) => {
+	const { email, rankings } = req.body;
+
+	try {
+		const user = await User.findOne({ email });
+		if (!user) return res.status(404).send({ message: "User not found" });
+
+		user.customRankings = rankings;
+		await user.save();
+
+		res.send({ message: "Rankings updated successfully", user });
+	} catch (e) {
+		return res.status(500).send({ message: "Server error" });
+	}
+});
+
+// Hardcoded fallback rankings
+function getHardcodedRankings() {
+	return [
+		{ level: 1, name: 'welcome', minimumDeposit: 0, directReferral: 0, referralDeposits: 0, bonus: 0 },
+		{ level: 2, name: 'silver', minimumDeposit: 5000, directReferral: 0, referralDeposits: 0, bonus: 200 },
+		{ level: 3, name: 'silverPro', minimumDeposit: 25000, directReferral: 0, referralDeposits: 0, bonus: 1000 },
+		{ level: 4, name: 'gold', minimumDeposit: 50000, directReferral: 0, referralDeposits: 0, bonus: 2000 },
+		{ level: 5, name: 'goldPro', minimumDeposit: 100000, directReferral: 0, referralDeposits: 0, bonus: 3000 },
+		{ level: 6, name: 'diamond', minimumDeposit: 500000, directReferral: 12, referralDeposits: 2550000, bonus: 20000 },
+		{ level: 7, name: 'ambassador', minimumDeposit: 1000000, directReferral: 12, referralDeposits: 2550000, bonus: 50000 }
+	];
+}
+
 //Delete multi users
 router.delete("/", async (req, res) => {
 	const { userIds, usernamePrefix, emailPrefix } = req.body;

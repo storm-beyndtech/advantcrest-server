@@ -8,8 +8,19 @@ const utilSchema = new mongoose.Schema({
 			address: String,
 			network: String,
 			price: Number,
+			apiSymbol: String, // For mapping to crypto API (e.g., 'bitcoin', 'ethereum')
+			fallbackPrice: Number, // Admin-set fallback price
 		},
 	],
+	defaultRankings: [{
+		level: { type: Number, required: true },
+		name: { type: String, required: true },
+		minimumDeposit: { type: Number, default: 0 },
+		directReferral: { type: Number, default: 0 },
+		referralDeposits: { type: Number, default: 0 },
+		bonus: { type: Number, default: 0 },
+		isActive: { type: Boolean, default: true }
+	}],
 	wireTransfer: {
 		bankName: String,
 		accountName: String,

@@ -144,6 +144,15 @@ export const userSchema = new mongoose.Schema({
 		type: Boolean,
 		default: false,
 	},
+	customRankings: [{
+		level: { type: Number, required: true },
+		name: { type: String, required: true },
+		minimumDeposit: { type: Number, default: 0 },
+		directReferral: { type: Number, default: 0 },
+		referralDeposits: { type: Number, default: 0 },
+		bonus: { type: Number, default: 0 },
+		isActive: { type: Boolean, default: true }
+	}],
 	traderId: {
 		type: mongoose.Schema.Types.ObjectId,
 		ref: "Trader",
