@@ -301,7 +301,7 @@ router.put("/update-profile", upload.single("profileImage"), async (req, res) =>
 		// Auto-calculate rank based on deposit if it's just a deposit/interest update and not manually set
 		if ((rest.deposit !== undefined || rest.interest !== undefined) && rank === undefined && !user.manualRank) {
 			const newDeposit = rest.deposit !== undefined ? rest.deposit : user.deposit;
-			const autoRank = calculateAutoRank(newDeposit);
+			const autoRank = await calculateAutoRank(newDeposit, email);
 			rest.rank = autoRank;
 		}
 
@@ -316,15 +316,45 @@ router.put("/update-profile", upload.single("profileImage"), async (req, res) =>
 	}
 });
 
-// Helper function to calculate rank based on deposit
-function calculateAutoRank(depositAmount) {
-	if (depositAmount >= 1000000) return 'ambassador';
-	if (depositAmount >= 500000) return 'diamond';
-	if (depositAmount >= 100000) return 'goldPro';
-	if (depositAmount >= 50000) return 'gold';
-	if (depositAmount >= 25000) return 'silverPro';
-	if (depositAmount >= 5000) return 'silver';
-	return 'welcome';
+// Helper function to calculate rank based on deposit using dynamic ranking data
+async function calculateAutoRank(depositAmount, userEmail) {
+	try {
+		// Fetch user to get custom rankings
+		const user = await User.findOne({ email: userEmail });
+		let rankings = [];
+
+		if (user && user.customRankings && user.customRankings.length > 0) {
+			// Use user's custom rankings
+			rankings = user.customRankings;
+		} else {
+			// Fallback to default rankings from utils or hardcoded
+			const { Util } = await import("../models/util.js");
+			const utils = await Util.findOne();
+			rankings = utils?.defaultRankings || getHardcodedRankings();
+		}
+
+		// Sort rankings by level descending to check highest first
+		const sortedRankings = [...rankings].sort((a, b) => b.level - a.level);
+		
+		for (const ranking of sortedRankings) {
+			if (depositAmount >= ranking.minimumDeposit) {
+				return ranking.name;
+			}
+		}
+		
+		// Return the lowest level rank if no match (should be welcome)
+		return sortedRankings[sortedRankings.length - 1]?.name || 'welcome';
+	} catch (error) {
+		console.error('Error calculating auto rank:', error);
+		// Fallback to hardcoded calculation
+		if (depositAmount >= 1000000) return 'ambassador';
+		if (depositAmount >= 500000) return 'diamond';
+		if (depositAmount >= 100000) return 'goldPro';
+		if (depositAmount >= 50000) return 'gold';
+		if (depositAmount >= 25000) return 'silverPro';
+		if (depositAmount >= 5000) return 'silver';
+		return 'welcome';
+	}
 }
 
 // Reset rank to auto-calculation
@@ -335,7 +365,7 @@ router.put("/reset-rank-to-auto", async (req, res) => {
 	if (!user) return res.status(404).send({ message: "User not found" });
 
 	try {
-		const autoRank = calculateAutoRank(user.deposit);
+		const autoRank = await calculateAutoRank(user.deposit, email);
 		user.rank = autoRank;
 		user.manualRank = false;
 		user = await user.save();
