@@ -36,23 +36,10 @@ mongoose
 	.then(() => console.log("Connected to MongoDB..."))
 	.catch((e) => console.error("Error connecting to MongoDB:", e));
 
-const allowedOrigins = [
-	"https://advantcrest.com",
-	"https://www.advantcrest.com",
-	"https://advantcrest.vercel.app",
-	"http://localhost:5173",
-	"http://localhost:3000",
-];
-
 const corsOptions = {
-	origin: (origin, callback) => {
-		if (!origin || allowedOrigins.includes(origin)) {
-			callback(null, true);
-		} else {
-			callback(new Error("Not allowed by CORS"));
-		}
-	},
+	origin: true,
 	methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+	allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
 	credentials: true,
 };
 
@@ -72,7 +59,6 @@ const postLimiter = rateLimit({
 
 // Middlewares
 app.post("*", postLimiter);
-app.use(cors());
 app.use(express.json());
 app.use("/api/users", usersRoutes);
 app.use("/api/transactions", transactionsRoutes);
