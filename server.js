@@ -16,17 +16,56 @@ import kycsRoutes from "./routes/kycs.js";
 import rateLimit from "express-rate-limit";
 
 const app = express();
+
+// Prevent crashes from unhandled errors
+process.on('uncaughtException', (error) => {
+	console.error('❌ Uncaught Exception:', error);
+	// Log but don't exit in production
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+	console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+	// Log but don't exit in production
+});
 const server = http.createServer(app);
 
-// Verify transporter - commented out to prevent server crashes
+// Verify email transporter (non-blocking)
 (async function verifyTP() {
-	await verifyTransporter();
+	try {
+		await verifyTransporter();
+	} catch (error) {
+		console.error('Email setup failed, continuing without email features');
+	}
 })();
 
-// Checking for required ENV variables
-if (!process.env.JWT_PRIVATE_KEY) {
-	console.error("Fatal Error: jwtPrivateKey is required");
-	process.exit(1);
+// Required environment variables check
+const requiredEnvVars = [
+	'JWT_PRIVATE_KEY',
+	'MONGODB_URL'
+];
+
+const optionalEnvVars = {
+	'SMTP_USER': 'Email features will be disabled',
+	'SMTP_PASSWORD': 'Email features will be disabled', 
+	'GOOGLE_CLIENT_ID': 'Google OAuth will be disabled',
+	'CLOUD_NAME': 'File uploads will be disabled',
+	'CLOUD_API_KEY': 'File uploads will be disabled',
+	'CLOUD_API_SECRET': 'File uploads will be disabled'
+};
+
+// Check required vars
+for (const envVar of requiredEnvVars) {
+	if (!process.env[envVar]) {
+		console.error(`❌ FATAL: ${envVar} is required`);
+		process.exit(1);
+	}
+}
+
+// Check optional vars
+for (const [envVar, warning] of Object.entries(optionalEnvVars)) {
+	if (!process.env[envVar]) {
+		console.warn(`⚠️ ${envVar} not set: ${warning}`);
+	}
 }
 
 // Connecting to MongoDB

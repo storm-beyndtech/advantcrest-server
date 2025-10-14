@@ -17,23 +17,27 @@ export const transporter = nodemailer.createTransport({
 });
 
 export const verifyTransporter = async (retries = 3, delay = 5000) => {
+	// Skip email verification if credentials not provided
+	if (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD) {
+		console.warn("SMTP credentials not provided. Email features disabled.");
+		return;
+	}
+
 	for (let attempt = 1; attempt <= retries; attempt++) {
 		try {
 			await transporter.verify();
-			console.log("Transporter Verified");
+			console.log("✅ Email transporter verified");
 			return;
 		} catch (error) {
-			console.error(
-				`Transporter verification failed on attempt ${attempt}`,
-				error instanceof Error && error.message,
-			);
-
+			console.error(`⚠️ Email verification attempt ${attempt} failed:`, error.message);
+			
 			if (attempt < retries) {
 				console.log(`Retrying in ${delay / 1000} seconds...`);
 				await new Promise((resolve) => setTimeout(resolve, delay));
 			} else {
-				console.error("All attempts to verify transporter failed. Exiting...");
-				process.exit(1);
+				console.error("❌ Email verification failed. Email features disabled.");
+				// DON'T EXIT - just continue without email
+				return;
 			}
 		}
 	}
