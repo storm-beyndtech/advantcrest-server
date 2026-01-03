@@ -13,9 +13,13 @@ import tradesRoutes from "./routes/trades.js";
 import traderRoutes from "./routes/traders.js";
 import utilsRoutes from "./routes/utils.js";
 import kycsRoutes from "./routes/kycs.js";
+import activityLogsRoutes from "./routes/activityLogs.js";
 import rateLimit from "express-rate-limit";
 
 const app = express();
+
+// Trust proxy for accurate IP detection
+app.set("trust proxy", true);
 
 // Prevent crashes from unhandled errors
 process.on('uncaughtException', (error) => {
@@ -40,7 +44,6 @@ const server = http.createServer(app);
 
 // Required environment variables check
 const requiredEnvVars = [
-	'JWT_PRIVATE_KEY',
 	'MONGODB_URL'
 ];
 
@@ -61,6 +64,11 @@ for (const envVar of requiredEnvVars) {
 	}
 }
 
+if (!process.env.JWT_SECRET && !process.env.JWT_PRIVATE_KEY) {
+	console.error("❌ FATAL: JWT_SECRET or JWT_PRIVATE_KEY is required");
+	process.exit(1);
+}
+
 // Check optional vars
 for (const [envVar, warning] of Object.entries(optionalEnvVars)) {
 	if (!process.env[envVar]) {
@@ -78,7 +86,7 @@ mongoose
 const corsOptions = {
 	origin: true,
 	methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-	allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+	allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "x-auth-token"],
 	credentials: true,
 };
 
@@ -107,6 +115,7 @@ app.use("/api/trades", tradesRoutes);
 app.use("/api/trader", traderRoutes);
 app.use("/api/utils", utilsRoutes);
 app.use("/api/kycs", kycsRoutes);
+app.use("/api/activity-logs", activityLogsRoutes);
 
 // Listening to port
 const PORT = process.env.PORT || 3000;

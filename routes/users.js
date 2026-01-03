@@ -11,6 +11,8 @@ import { v2 as cloudinary } from "cloudinary";
 import { CloudinaryStorage } from "multer-storage-cloudinary";
 import { googleLogin } from "../utils/googleLoginController.js";
 import { verifyOtp } from "../utils/verifyOtp.js";
+import { authenticate, requireAdmin, requireSelfOrAdmin } from "../middleware/auth.js";
+import { logActivity } from "../utils/activityLogger.js";
 
 // Configure Cloudinary
 cloudinary.config({
@@ -34,7 +36,7 @@ export const upload = multer({ storage: storage });
 const router = express.Router();
 
 //Get QR Code For 2FA
-router.get("/getQrcode", async (req, res) => {
+router.get("/getQrcode", authenticate, async (req, res) => {
 	const secret = speakeasy.generateSecret({ name: "ameritrades" });
 
 	qrcode.toDataURL(secret.otpauth_url, (err, data) => {
@@ -43,8 +45,12 @@ router.get("/getQrcode", async (req, res) => {
 });
 
 // GET /referrals/:username
-router.get("/referrals/:username", async (req, res) => {
+router.get("/referrals/:username", authenticate, async (req, res) => {
 	const { username } = req.params;
+
+	if (!req.user.isAdmin && req.user.username !== username) {
+		return res.status(403).json({ message: "Forbidden" });
+	}
 
 	try {
 		// Find all users referred by the given username
@@ -62,10 +68,14 @@ router.get("/referrals/:username", async (req, res) => {
 	}
 });
 
-router.get("/:id", async (req, res) => {
+router.get("/:id", authenticate, async (req, res) => {
 	try {
 		let user = await User.findById(req.params.id);
 		if (!user) return res.status(400).send({ message: "user not found" });
+
+		if (!req.user.isAdmin && req.user._id.toString() !== user._id.toString()) {
+			return res.status(403).send({ message: "Forbidden" });
+		}
 		res.send({ user });
 	} catch (x) {
 		return res.status(500).send({ message: "Something Went Wrong..." });
@@ -73,7 +83,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // Getting all users sorted by creation date (newest first)
-router.get("/", async (req, res) => {
+router.get("/", authenticate, requireAdmin, async (req, res) => {
 	try {
 		const users = await User.find().sort({ createdAt: -1 });
 		res.send(users);
@@ -116,7 +126,18 @@ router.post("/login", async (req, res) => {
 		const isMatch = await bcrypt.compare(password, user.password);
 		if (!isMatch) return res.status(400).send({ message: "Invalid password" });
 
-		res.send({ message: "success", user });
+		const token = user.genAuthToken();
+
+		if (user.isAdmin) {
+			await logActivity(req, {
+				actor: user,
+				action: "admin_login",
+				metadata: { via: "password", requires2FA: !!user.mfa },
+				notifyAdmin: true,
+			});
+		}
+
+		res.send({ message: "success", user, token });
 	} catch (e) {
 		console.error(e);
 		res.status(500).send({ message: "Internal server error" });
@@ -172,11 +193,12 @@ router.post("/verify-otp", async (req, res) => {
 			const salt = await bcrypt.genSalt(10);
 			const hashedPassword = await bcrypt.hash(password, salt);
 
-			user = new User({ username, email, password: hashedPassword, referredBy });
+			user = new User({ username, email, password: hashedPassword, referredBy, isAdmin: false });
 			await user.save();
 
 			await welcomeMail(user.email);
-			return res.send({ user });
+			const token = user.genAuthToken();
+			return res.send({ user, token });
 		}
 
 		if (type === "login-verification") {
@@ -191,7 +213,8 @@ router.post("/verify-otp", async (req, res) => {
 			const validPassword = await bcrypt.compare(password, user.password);
 			if (!validPassword) return res.status(400).send({ message: "Invalid password" });
 
-			return res.send({ user });
+			const token = user.genAuthToken();
+			return res.send({ user, token });
 		}
 
 		if (type === "reset-password") {
@@ -211,7 +234,8 @@ router.post("/verify-otp", async (req, res) => {
 			user.password = hashedPassword;
 			await user.save();
 
-			return res.send({ message: "Password reset successfully", user });
+			const token = user.genAuthToken();
+			return res.send({ message: "Password reset successfully", user, token });
 		}
 
 		return res.status(400).send({
@@ -239,15 +263,22 @@ router.post("/resend-otp", async (req, res) => {
 });
 
 //Change password
-router.put("/change-password", async (req, res) => {
+router.put("/change-password", authenticate, async (req, res) => {
 	const { currentPassword, newPassword, id } = req.body;
 
 	try {
-		const user = await User.findById(id);
+		const targetUserId = id || req.user._id;
+		if (!req.user.isAdmin && req.user._id.toString() !== targetUserId.toString()) {
+			return res.status(403).send({ message: "Forbidden" });
+		}
+
+		const user = await User.findById(targetUserId);
 		if (!user) return res.status(404).send({ message: "User not found" });
 
-		const validPassword = await bcrypt.compare(currentPassword, user.password);
-		if (!validPassword) return res.status(400).send({ message: "Current password is incorrect" });
+		if (!req.user.isAdmin || targetUserId.toString() === req.user._id.toString()) {
+			const validPassword = await bcrypt.compare(currentPassword, user.password);
+			if (!validPassword) return res.status(400).send({ message: "Current password is incorrect" });
+		}
 
 		const salt = await bcrypt.genSalt(10);
 		user.password = await bcrypt.hash(newPassword, salt);
@@ -281,13 +312,22 @@ router.put("/reset-password", async (req, res) => {
 	}
 });
 
-router.put("/update-profile", upload.single("profileImage"), async (req, res) => {
+router.put("/update-profile", authenticate, upload.single("profileImage"), async (req, res) => {
 	const { email, rank, ...rest } = req.body;
 
 	let user = await User.findOne({ email });
 	if (!user) return res.status(404).send({ message: "User not found" });
 
+	if (!req.user.isAdmin && req.user.email !== email) {
+		return res.status(403).send({ message: "Forbidden" });
+	}
+
 	try {
+		// Prevent privilege escalation via profile updates
+		if (!req.user.isAdmin && rest.isAdmin !== undefined) {
+			delete rest.isAdmin;
+		}
+
 		if (req.file) {
 			rest.profileImage = req.file.path;
 		}
@@ -307,6 +347,15 @@ router.put("/update-profile", upload.single("profileImage"), async (req, res) =>
 
 		user.set(rest);
 		user = await user.save();
+
+		const isAdminAction = req.user.isAdmin && req.user.email !== email;
+		await logActivity(req, {
+			actor: req.user,
+			action: isAdminAction ? "admin_update_profile" : "update_profile",
+			target: { collection: "users", id: user._id.toString() },
+			metadata: { fieldsUpdated: Object.keys(rest || {}) },
+			notifyAdmin: isAdminAction,
+		});
 
 		res.send({ user });
 	} catch (e) {
@@ -358,11 +407,15 @@ async function calculateAutoRank(depositAmount, userEmail) {
 }
 
 // Reset rank to auto-calculation
-router.put("/reset-rank-to-auto", async (req, res) => {
+router.put("/reset-rank-to-auto", authenticate, async (req, res) => {
 	const { email } = req.body;
 
 	let user = await User.findOne({ email });
 	if (!user) return res.status(404).send({ message: "User not found" });
+
+	if (!req.user.isAdmin && req.user.email !== email) {
+		return res.status(403).send({ message: "Forbidden" });
+	}
 
 	try {
 		const autoRank = await calculateAutoRank(user.deposit, email);
@@ -377,8 +430,12 @@ router.put("/reset-rank-to-auto", async (req, res) => {
 });
 
 // Get user rankings (custom or default)
-router.get("/rankings/:email", async (req, res) => {
+router.get("/rankings/:email", authenticate, async (req, res) => {
 	const { email } = req.params;
+
+	if (!req.user.isAdmin && req.user.email !== email) {
+		return res.status(403).send({ message: "Forbidden" });
+	}
 
 	try {
 		const user = await User.findOne({ email });
@@ -401,12 +458,16 @@ router.get("/rankings/:email", async (req, res) => {
 });
 
 // Update user custom rankings
-router.put("/update-rankings", async (req, res) => {
+router.put("/update-rankings", authenticate, async (req, res) => {
 	const { email, rankings } = req.body;
 
 	try {
 		const user = await User.findOne({ email });
 		if (!user) return res.status(404).send({ message: "User not found" });
+
+		if (!req.user.isAdmin && req.user.email !== email) {
+			return res.status(403).send({ message: "Forbidden" });
+		}
 
 		user.customRankings = rankings;
 		await user.save();
@@ -431,7 +492,7 @@ function getHardcodedRankings() {
 }
 
 //Delete multi users
-router.delete("/", async (req, res) => {
+router.delete("/", authenticate, requireAdmin, async (req, res) => {
 	const { userIds, usernamePrefix, emailPrefix } = req.body;
 
 	// Build the filter dynamically
@@ -459,6 +520,13 @@ router.delete("/", async (req, res) => {
 
 	try {
 		const result = await User.deleteMany(filter);
+		await logActivity(req, {
+			actor: req.user,
+			action: "admin_bulk_delete_users",
+			target: { collection: "users" },
+			metadata: { deletedCount: result.deletedCount, filterUsed: Object.keys(filter) },
+			notifyAdmin: true,
+		});
 		res.json({ success: true, deletedCount: result.deletedCount });
 	} catch (error) {
 		console.error(error);
@@ -467,15 +535,27 @@ router.delete("/", async (req, res) => {
 });
 
 // PUT /api/user/
-router.put("/update-user-trader", async (req, res) => {
+router.put("/update-user-trader", authenticate, async (req, res) => {
 	try {
 		const { traderId, action, userId } = req.body;
 
 		if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
+		if (!req.user.isAdmin && req.user._id.toString() !== userId.toString()) {
+			return res.status(403).json({ message: "Forbidden" });
+		}
+
 		const update = action === "copy" ? { traderId } : { $unset: { traderId: 1 } };
 
 		const updatedUser = await User.findByIdAndUpdate(userId, update, { new: true });
+
+		await logActivity(req, {
+			actor: req.user,
+			action: req.user.isAdmin ? "admin_update_user_trader" : "update_user_trader",
+			target: { collection: "users", id: userId },
+			metadata: { traderId, action },
+			notifyAdmin: req.user.isAdmin,
+		});
 
 		return res.status(200).json({
 			message: action === "copy" ? "Trader copied" : "Trader uncopied",
@@ -488,11 +568,15 @@ router.put("/update-user-trader", async (req, res) => {
 });
 
 // Veryify 2FA for user
-router.post("/verifyToken", async (req, res) => {
+router.post("/verifyToken", authenticate, async (req, res) => {
 	const { token, secret, email } = req.body;
 
 	let user = await User.findOne({ email });
 	if (!user) return res.status(400).send({ message: "Invalid email" });
+
+	if (!req.user.isAdmin && req.user.email !== email) {
+		return res.status(403).send({ message: "Forbidden" });
+	}
 
 	try {
 		const verify = speakeasy.totp.verify({

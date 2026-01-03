@@ -4,6 +4,8 @@ import { Trader } from "../models/trader.js";
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
 import { CloudinaryStorage } from "multer-storage-cloudinary";
+import { authenticate, requireAdmin } from "../middleware/auth.js";
+import { logActivity } from "../utils/activityLogger.js";
 
 // Configure Cloudinary
 cloudinary.config({
@@ -23,6 +25,9 @@ const storage = new CloudinaryStorage({
 });
 
 const upload = multer({ storage: storage });
+
+// Admin guard for all trader routes
+router.use(authenticate, requireAdmin);
 
 /**
  * @route   GET /api/admin
@@ -77,6 +82,14 @@ router.post("/create", upload.single("profileImage"), async (req, res) => {
 
 		const newTrader = await Trader.create(traderData);
 
+		await logActivity(req, {
+			actor: req.user,
+			action: "admin_create_trader",
+			target: { collection: "traders", id: newTrader._id.toString() },
+			metadata: { name: traderData?.name },
+			notifyAdmin: true,
+		});
+
 		res.status(201).json({ message: "Trader Created Successfully", newTrader });
 	} catch (error) {
 		if (error.name === "ValidationError") {
@@ -116,6 +129,14 @@ router.put("/:id", upload.single("profileImage"), async (req, res) => {
 			});
 		}
 
+		await logActivity(req, {
+			actor: req.user,
+			action: "admin_update_trader",
+			target: { collection: "traders", id: trader._id.toString() },
+			metadata: { name: traderData?.name },
+			notifyAdmin: true,
+		});
+
 		res.status(200).json({ message: "Trader Updated Successfully", trader });
 	} catch (error) {
 		if (error.name === "ValidationError") {
@@ -144,6 +165,13 @@ router.delete("/:id", async (req, res) => {
 				message: "Trader not found",
 			});
 		}
+
+		await logActivity(req, {
+			actor: req.user,
+			action: "admin_delete_trader",
+			target: { collection: "traders", id: trader._id.toString() },
+			notifyAdmin: true,
+		});
 
 		res.status(204).json({ message: "Trader Deleted Successfully" });
 	} catch (error) {

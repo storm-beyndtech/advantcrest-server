@@ -2,6 +2,8 @@ import express from "express";
 import { Util } from "../models/util.js";
 import { multiMails, sendContactUsMail } from "../utils/mailer.js";
 import { updateCoinPricesFromAPI, fetchCryptoPrices } from "../utils/cryptoPrices.js";
+import { authenticate, requireAdmin } from "../middleware/auth.js";
+import { logActivity } from "../utils/activityLogger.js";
 
 const router = express.Router();
 
@@ -16,7 +18,7 @@ router.get("/", async (req, res) => {
 });
 
 // updating a util
-router.put("/update/:id", async (req, res) => {
+router.put("/update/:id", authenticate, requireAdmin, async (req, res) => {
 	const { id } = req.params;
 
 	try {
@@ -33,6 +35,14 @@ router.put("/update/:id", async (req, res) => {
 
 		if (!util) return res.status(404).send("Util not found");
 
+		await logActivity(req, {
+			actor: req.user,
+			action: "admin_update_util",
+			target: { collection: "utils", id },
+			metadata: { fields: Object.keys(req.body || {}) },
+			notifyAdmin: true,
+		});
+
 		res.status(200).send(util);
 	} catch (error) {
 		for (i in error.errors) res.status(500).send(error.errors[i].message);
@@ -40,12 +50,19 @@ router.put("/update/:id", async (req, res) => {
 });
 
 // deleting a util
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", authenticate, requireAdmin, async (req, res) => {
 	const { id } = req.params;
 
 	try {
 		const util = await Util.findByIdAndRemove(id);
 		if (!util) return res.status(404).send("Util not found");
+
+		await logActivity(req, {
+			actor: req.user,
+			action: "admin_delete_util",
+			target: { collection: "utils", id },
+			notifyAdmin: true,
+		});
 
 		res.status(200).send(util);
 	} catch (error) {
@@ -54,7 +71,7 @@ router.delete("/:id", async (req, res) => {
 });
 
 // POST route to send mail
-router.post("/send-mail", async (req, res) => {
+router.post("/send-mail", authenticate, requireAdmin, async (req, res) => {
 	const { emails, subject, message } = req.body;
 
 	if (!emails || !Array.isArray(emails) || emails.length === 0) {
@@ -68,6 +85,13 @@ router.post("/send-mail", async (req, res) => {
 	try {
 		const emailData = await multiMails(emails, subject, message);
 		if (emailData.error) return res.status(400).send({ message: emailData.error });
+
+		await logActivity(req, {
+			actor: req.user,
+			action: "admin_send_mail",
+			target: { collection: "utils" },
+			metadata: { recipientCount: emails.length, subject },
+		});
 
 		res.status(200).json({
 			message: "Emails sent successfully",
@@ -109,7 +133,7 @@ router.post("/contact-us", async (req, res) => {
 });
 
 // Toggle maintenance mode - Admin only
-router.put("/maintenance-mode", async (req, res) => {
+router.put("/maintenance-mode", authenticate, requireAdmin, async (req, res) => {
 	const { enabled, message } = req.body;
 
 	try {
@@ -123,6 +147,13 @@ router.put("/maintenance-mode", async (req, res) => {
 		};
 
 		await util.save();
+		await logActivity(req, {
+			actor: req.user,
+			action: "admin_update_maintenance_mode",
+			target: { collection: "utils", id: util._id.toString() },
+			metadata: { enabled, message },
+			notifyAdmin: true,
+		});
 		res.status(200).json({
 			message: `Maintenance mode ${enabled ? 'enabled' : 'disabled'}`,
 			maintenanceMode: util.maintenanceMode

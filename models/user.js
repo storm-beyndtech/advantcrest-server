@@ -107,6 +107,7 @@ export const userSchema = new mongoose.Schema({
 	isAdmin: {
 		type: Boolean,
 		default: false,
+		immutable: false,
 	},
 	mfa: {
 		type: Boolean,
@@ -161,9 +162,10 @@ export const userSchema = new mongoose.Schema({
 });
 
 userSchema.methods.genAuthToken = function () {
+	const secret = process.env.JWT_SECRET || process.env.JWT_PRIVATE_KEY;
 	return jwt.sign(
 		{ _id: this._id, username: this.username, isAdmin: this.isAdmin },
-		process.env.JWT_PRIVATE_KEY,
+		secret,
 	);
 };
 

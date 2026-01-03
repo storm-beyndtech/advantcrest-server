@@ -31,12 +31,14 @@ export const googleLogin = async (req, res) => {
 				username,
 				profileImage: picture,
 				isGoogleUser: true,
+				isAdmin: false,
 			});
 			await user.save();
 			await welcomeMail(user.email);
 		}
 
-		res.json({ user });
+		const token = user.genAuthToken();
+		res.json({ user, token });
 	} catch (error) {
 		console.error(error);
 		res.status(401).json({ message: "Invalid Google token" });

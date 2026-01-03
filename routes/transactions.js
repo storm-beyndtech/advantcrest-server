@@ -1,18 +1,23 @@
 import express from 'express';
 import { Transaction } from '../models/transaction.js';
+import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { logActivity } from '../utils/activityLogger.js';
 
 const router  = express.Router()
 
 
 
 // getting single transaction
-router.get('/:id', async(req, res) => {
+router.get('/:id', authenticate, async(req, res) => {
   const { id } = req.params
 
   try {
     const transaction = await Transaction.findById(id)
 
     if(!transaction) return res.status(400).send({message: "Transaction not found..."})   
+    if (!req.user.isAdmin && transaction.user?.email !== req.user.email) {
+      return res.status(403).send({ message: "Forbidden" });
+    }
     res.send(transaction);
   } 
   catch(e){ for(i in e.errors) res.status(500).send({message: e.errors[i].message}) }
@@ -21,7 +26,7 @@ router.get('/:id', async(req, res) => {
 
 
 // getting all transactions
-router.get('/', async (req, res) => {
+router.get('/', authenticate, requireAdmin, async (req, res) => {
   try {
     let transactions = await Transaction.find()
     if (!transactions || transactions.length === 0) return res.status(400).send({message: "Transactions not found..."})
@@ -38,8 +43,12 @@ router.get('/', async (req, res) => {
 
 
 // get all transactions by user
-router.get('/user/:email', async(req, res) => {
+router.get('/user/:email', authenticate, async(req, res) => {
   const { email } = req.params
+
+  if (!req.user.isAdmin && req.user.email !== email) {
+    return res.status(403).send({ message: "Forbidden" });
+  }
   
   try {
     let transactions = await Transaction.find({"user.email": email})
@@ -54,7 +63,7 @@ router.get('/user/:email', async(req, res) => {
 });
 
 // Update a single transaction by ID
-router.put('/:id', async (req, res) => {
+router.put('/:id', authenticate, requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { amount, convertedAmount } = req.body;
 
@@ -76,6 +85,13 @@ router.put('/:id', async (req, res) => {
     // Check if the transaction was found and updated
     if (!updatedTransaction) return res.status(404).send({ message: "Transaction not found." })
 
+    await logActivity(req, {
+      actor: req.user,
+      action: "update_transaction",
+      target: { collection: "transactions", id },
+      metadata: { amount, convertedAmount },
+    });
+
     res.send({message: "Transaction updated successfully."});
   } catch (error) { res.status(500).send({ message: "Something went wrong while updating the transaction." })}
 });
@@ -83,13 +99,18 @@ router.put('/:id', async (req, res) => {
 
 
 // Delete a transaction
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticate, requireAdmin, async (req, res) => {
   const { id } = req.params;
 
   try {
     let transaction = await Transaction.findByIdAndRemove(id);
 
     if(!transaction) return res.status(400).send({message: "Transaction not found..."})   
+    await logActivity(req, {
+      actor: req.user,
+      action: "delete_transaction",
+      target: { collection: "transactions", id },
+    });
     res.send(transaction);
   } catch(e){ for(i in e.errors) res.status(500).send({message: e.errors[i].message}) }
 });

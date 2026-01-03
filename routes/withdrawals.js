@@ -2,11 +2,13 @@ import express from "express";
 import { Transaction } from "../models/transaction.js";
 import { User } from "../models/user.js";
 import { alertAdmin, pendingWithdrawalMail, withdrawalMail } from "../utils/mailer.js";
+import { authenticate, requireAdmin } from "../middleware/auth.js";
+import { logActivity } from "../utils/activityLogger.js";
 
 const router = express.Router();
 
 // getting all withdrawals
-router.get("/", async (req, res) => {
+router.get("/", authenticate, requireAdmin, async (req, res) => {
 	try {
 		const withdrawals = await Transaction.find({ type: "withdrawal" });
 		res.send(withdrawals);
@@ -16,12 +18,15 @@ router.get("/", async (req, res) => {
 });
 
 // getting single withdrawal
-router.get("/:id", async (req, res) => {
+router.get("/:id", authenticate, async (req, res) => {
 	const { id } = req.params;
 
 	try {
 		const withdrawal = await Transaction.findById(id);
 		if (!withdrawal) return res.status(400).send({ message: "Transaction not found..." });
+		if (!req.user.isAdmin && withdrawal.user?.id?.toString() !== req.user._id.toString()) {
+			return res.status(403).send({ message: "Forbidden" });
+		}
 		res.send(withdrawal);
 	} catch (e) {
 		for (i in e.errors) res.status(500).send({ message: e.errors[i].message });
@@ -29,8 +34,12 @@ router.get("/:id", async (req, res) => {
 });
 
 // get all withdrawals by user
-router.get("/user/:email", async (req, res) => {
+router.get("/user/:email", authenticate, async (req, res) => {
 	const { email } = req.params;
+
+	if (!req.user.isAdmin && req.user.email !== email) {
+		return res.status(403).send({ message: "Forbidden" });
+	}
 
 	try {
 		const withdrawals = await Transaction.find({ from: email });
@@ -43,15 +52,20 @@ router.get("/user/:email", async (req, res) => {
 });
 
 // making a withdrawal
-router.post("/", async (req, res) => {
+router.post("/", authenticate, async (req, res) => {
 	const { id, amount, convertedAmount, coinName, network, address } = req.body;
 
-	const user = await User.findById(id);
+	const userId = id || req.user._id;
+	if (!req.user.isAdmin && req.user._id.toString() !== userId.toString()) {
+		return res.status(403).send({ message: "Forbidden" });
+	}
+
+	const user = await User.findById(userId);
 	if (!user) return res.status(400).send({ message: "Something went wrong" });
 
 	// Check if there's any pending withdrawal for the user
 	const pendingWithdrawal = await Transaction.findOne({
-		"user.id": id,
+		"user.id": userId,
 		status: "pending",
 		type: "withdrawal",
 	});
@@ -95,7 +109,7 @@ router.post("/", async (req, res) => {
 });
 
 // updating a withdrawal
-router.put("/:id", async (req, res) => {
+router.put("/:id", authenticate, requireAdmin, async (req, res) => {
 	const { id } = req.params;
 	const { email, amount, status } = req.body;
 
@@ -136,6 +150,13 @@ router.put("/:id", async (req, res) => {
 
 		const emailData = await withdrawalMail(fullName, amount, date, email, isRejected);
 		if (emailData.error) return res.status(400).send({ message: emailData.error });
+
+		await logActivity(req, {
+			actor: req.user,
+			action: "update_withdrawal_status",
+			target: { collection: "transactions", id },
+			metadata: { status, email },
+		});
 
 		res.send({ message: "Withdrawal successfully updated" });
 	} catch (e) {
