@@ -324,8 +324,25 @@ router.put("/update-profile", authenticate, upload.single("profileImage"), async
 
 	try {
 		// Prevent privilege escalation via profile updates
-		if (!req.user.isAdmin && rest.isAdmin !== undefined) {
-			delete rest.isAdmin;
+		const forbidden = [
+			"isAdmin",
+			"deposit",
+			"withdraw",
+			"interest",
+			"bonus",
+			"demo",
+			"mfa",
+			"idVerified",
+			"withdrawalLimit",
+			"minWithdrawal",
+			"withdrawalStatus",
+			"traderId",
+			"password",
+			"createdAt",
+			"email",
+		];
+		for (const field of forbidden) {
+			if (field in rest) delete rest[field];
 		}
 
 		if (req.file) {

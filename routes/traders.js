@@ -26,14 +26,27 @@ const storage = new CloudinaryStorage({
 
 const upload = multer({ storage: storage });
 
-// Admin guard for all trader routes
-router.use(authenticate, requireAdmin);
+/**
+ * @route   GET /api/trader/public
+ * @desc    Public list of traders (no auth, read-only)
+ */
+router.get("/public", async (_req, res) => {
+	try {
+		const traders = await Trader.find();
+
+		res.status(200).json(traders);
+	} catch (error) {
+		res.status(500).json({
+			message: error.message,
+		});
+	}
+});
 
 /**
- * @route   GET /api/admin
+ * @route   GET /api/trader
  * @desc    Get all traders (admin only)
  */
-router.get("/", async (req, res) => {
+router.get("/", authenticate, requireAdmin, async (req, res) => {
 	try {
 		const traders = await Trader.find();
 
@@ -49,7 +62,7 @@ router.get("/", async (req, res) => {
  * @route   GET /api/admin/:id
  * @desc    Get trader by ID (admin only)
  */
-router.get("/:id", async (req, res) => {
+router.get("/:id", authenticate, requireAdmin, async (req, res) => {
 	try {
 		const trader = await Trader.findById(req.params.id);
 
@@ -71,7 +84,7 @@ router.get("/:id", async (req, res) => {
  * @route   POST /api/admin/create
  * @desc    Create a new trader with profile image (admin only)
  */
-router.post("/create", upload.single("profileImage"), async (req, res) => {
+router.post("/create", authenticate, requireAdmin, upload.single("profileImage"), async (req, res) => {
 	try {
 		const traderData = JSON.parse(req.body.traderData);
 
@@ -109,7 +122,7 @@ router.post("/create", upload.single("profileImage"), async (req, res) => {
  * @route   PUT /api/admin/:id
  * @desc    Update a trader with profile image (admin only)
  */
-router.put("/:id", upload.single("profileImage"), async (req, res) => {
+router.put("/:id", authenticate, requireAdmin, upload.single("profileImage"), async (req, res) => {
 	try {
 		const traderData = JSON.parse(req.body.traderData);
 
@@ -156,7 +169,7 @@ router.put("/:id", upload.single("profileImage"), async (req, res) => {
  * @route   DELETE /api/admin/:id
  * @desc    Delete a trader (admin only)
  */
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", authenticate, requireAdmin, async (req, res) => {
 	try {
 		const trader = await Trader.findByIdAndDelete(req.params.id);
 
